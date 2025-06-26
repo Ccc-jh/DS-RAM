@@ -1,0 +1,12 @@
+S0N0: 2025/06/19 17:19:05 messageHandle.go:38: S0N0 get sequenceLock locked, now trying to propose...
+S0N0: 2025/06/19 17:19:05 messageHandle.go:46: S0N0 put the request into the pool ...
+S0N0: 2025/06/19 17:19:09 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 4038 
+S0N0: 2025/06/19 17:19:10 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 3676 
+S0N0: 2025/06/19 17:19:11 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 1477 
+S0N0: 2025/06/19 17:19:12 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 3843 
+S0N0: 2025/06/19 17:19:13 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 453 
+S0N0: 2025/06/19 17:19:14 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 4694 
+S0N0: 2025/06/19 17:19:15 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 4074 
+S0N0: 2025/06/19 17:19:16 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 2565 
+S0N0: 2025/06/19 17:19:17 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 3320 
+S0N0: 2025/06/19 17:19:18 pbftOutside_module.go:49: S0N0 : has handled injected txs msg, txs: 4418 
