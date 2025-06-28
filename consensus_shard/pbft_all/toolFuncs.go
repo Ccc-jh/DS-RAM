@@ -28,7 +28,7 @@ func (p *PbftConsensusNode) set2DMap(isPrePareConfirm bool, key string, val *sha
 	}
 }
 
-// --获取一个分片内的邻居节点  get neighbor nodes in a shard
+// get neighbor nodes in a shard
 func (p *PbftConsensusNode) getNeighborNodes() []string {
 	receiverNodes := make([]string, 0)
 	for _, ip := range p.ip_nodeTable[p.ShardID] {

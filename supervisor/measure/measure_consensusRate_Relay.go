@@ -7,9 +7,8 @@ import (
 
 type TestModule_SuccessRate struct {
 	epochID          int
-	totalProposals   []int // 记录每个 epoch 提议的区块数量
-	successfulBlocks []int // 记录每个 epoch 成功通过共识的区块数量
-
+	totalProposals   []int
+	successfulBlocks []int
 }
 
 func NewTestModule_SuccessRate() *TestModule_SuccessRate {
@@ -35,13 +34,11 @@ func (tmsr *TestModule_SuccessRate) UpdateMeasureRecord(b *message.BlockInfoMsg)
 		tmsr.epochID++
 	}
 
-	// 记录提议的区块数量
 	tmsr.totalProposals[epochid]++
 	fmt.Printf("Epoch %d Total Proposals: %d\n", epochid, tmsr.totalProposals[epochid])
-	if b.BlockBodyLength == 0 { // 空区块不计入统计
+	if b.BlockBodyLength == 0 {
 		return
 	}
-	// 检查区块是否成功通过共识
 	if b.BlockBodyLength > 0 {
 		tmsr.successfulBlocks[epochid]++
 		fmt.Printf("Epoch %d Successful Blocks: %d\n", epochid, tmsr.successfulBlocks[epochid])
@@ -52,7 +49,6 @@ func (tmsr *TestModule_SuccessRate) UpdateMeasureRecord(b *message.BlockInfoMsg)
 
 func (tmsr *TestModule_SuccessRate) HandleExtraMessage([]byte) {}
 
-// 输出每个epoch的共识成功率以及总的共识成功率
 func (tmsr *TestModule_SuccessRate) OutputRecord() (perEpochSuccessRate []float64, totalSuccessRate float64) {
 	tmsr.writeToCSV()
 

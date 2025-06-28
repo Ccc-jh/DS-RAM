@@ -32,17 +32,17 @@ const (
 )
 
 type NodeBehaviorStats struct {
-	MsgCount          int       // 消息数
-	LastMsgTime       time.Time // 上次消息时间
-	BlockSubmitCount  int       // 区块提交数
-	LastBlockTime     time.Time // 上次区块提交时间
-	Reputation        float64   // 当前信誉
-	ReputationHistory []float64 // 信誉历史
-	IsIsolated        bool      // 是否被隔离
-	IsolationEnd      time.Time // 隔离结束时间
-	SuspiciousScore   float64   // 可疑分数
-	TimeoutCount      int       // 超时次数
-	AbnormalChange    bool      // 信誉突变标记
+	MsgCount          int       // Number of messages
+	LastMsgTime       time.Time // Timestamp of the last message
+	BlockSubmitCount  int       // Number of blocks submitted
+	LastBlockTime     time.Time // Timestamp of the last block submission
+	Reputation        float64   // Current reputation
+	ReputationHistory []float64 // History of reputation values
+	IsIsolated        bool      // Isolation status
+	IsolationEnd      time.Time // End time of isolation
+	SuspiciousScore   float64   // Suspicion score
+	TimeoutCount      int       // Count of timeouts
+	AbnormalChange    bool      // Flag indicating abnormal reputation changes
 }
 type AuditNode struct {
 	// the local config about pbft
@@ -83,19 +83,19 @@ type AuditNode struct {
 	processingStartTimes map[uint64]time.Time
 	processingDurations  map[uint64]time.Duration
 
-	totalMaliciousNodes            int //总共监督的共识节点的数量(全部分片)
-	detectedMaliciousNodes         int //检测到恶意节点的数量
-	LowReputationNodes             map[uint64]map[uint64]bool
-	TimeoutNodes                   map[uint64]map[uint64]bool
-	detectedNodes                  map[uint64]bool
-	totalMaliciousNodesPerShard    map[uint64]int             //每个分片中的恶意节点总数
-	DetectedMaliciousNodesPerShard map[uint64]int             //每个分片检测到的恶意节点总数
-	InitTimeoutNode                map[uint64]map[uint64]bool //存放本身就是恶意节点
-	IsSuspiciousNodesPerShard      map[uint64]map[uint64]bool
-	misjudgedNodesSet              map[uint64]bool // 存放误判节点的集合，避免重复计数
-	suspectedNodesSet              map[uint64]bool // 存放已标记为可疑的节点集合，避免重复计数
-	totalSuspected                 int
-	misjudgedNodes                 int
+	totalMaliciousNodes            int                        // Total number of supervised consensus nodes (across all shards)
+	detectedMaliciousNodes         int                        // Number of detected malicious nodes
+	LowReputationNodes             map[uint64]map[uint64]bool // Nodes with low reputation
+	TimeoutNodes                   map[uint64]map[uint64]bool // Nodes that timed out
+	detectedNodes                  map[uint64]bool            // Detected nodes
+	totalMaliciousNodesPerShard    map[uint64]int             // Total malicious nodes in each shard
+	DetectedMaliciousNodesPerShard map[uint64]int             // Malicious nodes detected in each shard
+	InitTimeoutNode                map[uint64]map[uint64]bool // Nodes initially marked as malicious
+	IsSuspiciousNodesPerShard      map[uint64]map[uint64]bool // Suspicious nodes in each shard
+	misjudgedNodesSet              map[uint64]bool            // Set of misjudged nodes to avoid duplicate counting
+	suspectedNodesSet              map[uint64]bool            // Set of nodes marked as suspicious to avoid duplicate counting
+	totalSuspected                 int                        // Total number of suspected nodes
+	misjudgedNodes                 int                        // Total number of misjudged nodes
 
 	NodeStats      map[uint64]*NodeBehaviorStats
 	IsolationVotes map[uint64]map[uint64]bool // nodeID -> voterID -> agree
@@ -163,7 +163,7 @@ func NewAuditNode(shardID, nodeID uint64, pcc *params.ChainConfig) *AuditNode {
 	return a
 }
 
-// 判断某节点是否为审计节点
+// Check whether a specific node is an audit node.
 func IsAuditNode(shardID, nodeID uint64) bool {
 	if nodes, ok := AuditNodeMap[shardID]; ok {
 		return nodes[nodeID]
@@ -172,7 +172,7 @@ func IsAuditNode(shardID, nodeID uint64) bool {
 }
 func (a *AuditNode) handleMessage(msg []byte) {
 	if !IsAuditNode(a.ShardID, a.NodeID) {
-		return // 非审计节点不处理
+		return
 	}
 	msgType, content := message.SplitMessage(msg)
 	switch msgType {
@@ -197,7 +197,7 @@ func (a *AuditNode) handleMessage(msg []byte) {
 }
 
 func (a *AuditNode) PrintAudMessg() {
-	a.al.Plog.Println("我是审计节点")
+	a.al.Plog.Println("Audit node")
 }
 
 func (c *AuditNode) TcpListen() {
@@ -207,7 +207,7 @@ func (c *AuditNode) TcpListen() {
 		log.Panic(err)
 	}
 
-	// 启动一个 goroutine 定期检查隔离恢复
+	// Start a goroutine to periodically check for isolation recovery.
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
@@ -308,8 +308,6 @@ func (a *AuditNode) handleFinishTime(content []byte) {
 	processDuration := time.Since(startTime)
 	a.processingDurations[finishMsg.NodeId] = processDuration
 
-	// a.al.Plog.Printf("A%dN%d: Processing time for node S%dN%d is %s\n", a.ShardID, a.NodeID, finishMsg.ShardID, finishMsg.NodeId, processDuration.String())
-
 	timeoutNodeMsg := new(message.TimeoutNodeMessage)
 	err1 := json.Unmarshal(content, &timeoutNodeMsg)
 	if err1 != nil {
@@ -321,8 +319,6 @@ func (a *AuditNode) handleFinishTime(content []byte) {
 	for _, nodeID := range timeoutNodeMsg.NodeIDs {
 		a.TimeoutNodes[timeoutNodeMsg.ShardID][nodeID] = true
 	}
-	//a.al.Plog.Printf("Supervisor: received malicious node info for ShardID %d: %v\n", timeoutNodeMsg.ShardID, timeoutNodeMsg.NodeIDs)
-
 	a.checkTimeout(timeoutNodeMsg, processDuration)
 	a.updateNodeBehavior(finishMsg.NodeId, "finish")
 
@@ -426,7 +422,7 @@ func (a *AuditNode) detectAbnormalBehavior(nodeID uint64) {
 	}
 }
 
-// 获取本分片所有审计节点ID
+// Get all audit node IDs in the current shard.
 func (a *AuditNode) getAuditNodeIDs() []uint64 {
 	var ids []uint64
 	for nodeID := range AuditNodeMap[a.ShardID] {
@@ -440,18 +436,15 @@ func (a *AuditNode) broadcastIsolationProposal(nodeID uint64) {
 	a.al.Plog.Printf("Audit: Proposing isolation for suspicious node %d\n", nodeID)
 	for _, auditID := range a.getAuditNodeIDs() {
 		if auditID == a.NodeID {
-			// 本地直接投票
 			a.handleIsolationVote(nodeID, a.NodeID, true)
 		} else {
-			// 这里应通过网络发送投票请求，简化为直接调用
 			go a.simulateRemoteVote(nodeID, auditID)
 		}
 	}
 }
 
-// 模拟远程审计节点投票（实际应为网络RPC/消息）
+// Simulate remote audit node voting.
 func (a *AuditNode) simulateRemoteVote(targetNodeID, voterID uint64) {
-	// 这里假设所有审计节点都同意隔离，可根据实际情况调整
 	a.handleIsolationVote(targetNodeID, voterID, true)
 }
 
@@ -460,8 +453,6 @@ func (a *AuditNode) handleIsolationVote(targetNodeID, voterID uint64, agree bool
 		a.IsolationVotes[targetNodeID] = make(map[uint64]bool)
 	}
 	a.IsolationVotes[targetNodeID][voterID] = agree
-
-	// 统计投票
 	voteCount := 0
 	agreeCount := 0
 	for _, v := range a.IsolationVotes[targetNodeID] {
@@ -470,7 +461,6 @@ func (a *AuditNode) handleIsolationVote(targetNodeID, voterID uint64, agree bool
 			agreeCount++
 		}
 	}
-	// 多数同意则隔离
 	if voteCount >= len(a.getAuditNodeIDs()) && agreeCount > voteCount/2 {
 		a.NodeStats[targetNodeID].IsIsolated = true
 		a.NodeStats[targetNodeID].IsolationEnd = time.Now().Add(30 * time.Second)
@@ -478,7 +468,7 @@ func (a *AuditNode) handleIsolationVote(targetNodeID, voterID uint64, agree bool
 	}
 }
 
-// 隔离期结束后自动恢复
+// Automatically recover after the isolation period ends.
 func (a *AuditNode) checkIsolationRecovery() {
 	if !IsAuditNode(a.ShardID, a.NodeID) {
 		return
@@ -488,10 +478,9 @@ func (a *AuditNode) checkIsolationRecovery() {
 			stats.IsIsolated = false
 			stats.SuspiciousScore = 0
 			a.al.Plog.Printf("Audit: Node %d isolation ended, reputation can recover\n", nodeID)
-			// 动态恢复：如果节点近期行为正常，恢复快，否则慢
 			recoverStep := 5.0
 			if stats.TimeoutCount == 0 && !stats.AbnormalChange {
-				recoverStep = 10.0 // 行为良好，恢复更快
+				recoverStep = 10.0
 			}
 			if stats.Reputation < 60.0 {
 				stats.Reputation += recoverStep
@@ -519,7 +508,7 @@ func (a *AuditNode) handleMaliciousNodeInfo(content []byte) {
 	}
 	a.al.Plog.Printf("Audit: received malicious node info for ShardID %d: %v\n", maliciousMsg.ShardID, maliciousMsg.NodeIDs)
 
-	// 更新总的恶意节点数量
+	// Update the total number of malicious nodes
 	a.updateTotalMaliciousNodes()
 }
 
@@ -539,9 +528,9 @@ func (a *AuditNode) checkTimeout(timeoutNodeMsg *message.TimeoutNodeMessage, pro
 				a.IsSuspiciousNodesPerShard[a.ShardID][timeoutNodeMsg.NodeId] = true
 				a.detectedNodes[timeoutNodeMsg.NodeId] = true
 			}
-			a.al.Plog.Printf("A%dN%d: 节点S%dN%d 已经被标记为超时\n", a.ShardID, a.NodeID, timeoutNodeMsg.ShardID, timeoutNodeMsg.NodeId)
+			a.al.Plog.Printf("A%dN%d: Node S%dN%d has been marked as timed out\n", a.ShardID, a.NodeID, timeoutNodeMsg.ShardID, timeoutNodeMsg.NodeId)
 		} else {
-			a.al.Plog.Printf("A%dN%d: 节点S%dN%d 已经被检测为超时，不重复统计\n", a.ShardID, a.NodeID, timeoutNodeMsg.ShardID, timeoutNodeMsg.NodeId)
+			a.al.Plog.Printf("A%dN%d: Node S%dN%d has already been detected as timed out, not counting again\n", a.ShardID, a.NodeID, timeoutNodeMsg.ShardID, timeoutNodeMsg.NodeId)
 		}
 	}
 	if a.TimeoutNodes[timeoutNodeMsg.ShardID][timeoutNodeMsg.NodeId] && !a.IsSuspiciousNodesPerShard[a.ShardID][timeoutNodeMsg.NodeId] {
@@ -557,9 +546,8 @@ func (a *AuditNode) checkTimeout(timeoutNodeMsg *message.TimeoutNodeMessage, pro
 func (a *AuditNode) calculateMaliciousDetectionRate() {
 
 	a.updateTotalMaliciousNodes()
-	//shardTotalMaliciousNodes := a.totalMaliciousNodesPerShard[a.ShardID] + a.totalMaliciousNodesPerShard2[a.ShardID]
 	if a.totalMaliciousNodesPerShard[a.ShardID] == 0 {
-		a.al.Plog.Printf("Audit: Shard %d 没有已知的恶意节点\n", a.ShardID)
+		a.al.Plog.Printf("Audit: Shard %d has no known malicious nodes\n", a.ShardID)
 	} else {
 		shardDetectionRate := float64(a.DetectedMaliciousNodesPerShard[a.ShardID]) / float64(a.totalMaliciousNodesPerShard[a.ShardID])
 		a.al.Plog.Printf("Audit: Shard %d malicious detection rate: %.2f (Detected: %d, Total: %d)\n", a.ShardID, shardDetectionRate, a.DetectedMaliciousNodesPerShard[a.ShardID], a.totalMaliciousNodesPerShard[a.ShardID])
@@ -567,7 +555,6 @@ func (a *AuditNode) calculateMaliciousDetectionRate() {
 
 }
 
-// 更新总的恶意节点数量的方法
 func (a *AuditNode) updateTotalMaliciousNodes() {
 	a.totalMaliciousNodes = 0
 	a.totalMaliciousNodesPerShard = make(map[uint64]int)
@@ -579,7 +566,6 @@ func (a *AuditNode) updateTotalMaliciousNodes() {
 				a.totalMaliciousNodesPerShard[shardID]++
 				a.totalMaliciousNodes++
 				visitedNodes[key] = true
-				//a.al.Plog.Printf("Counting malicious node: ShardID %d, NodeID %d\n", shardID, nodeID)
 			}
 		}
 	}
@@ -590,7 +576,6 @@ func (a *AuditNode) updateTotalMaliciousNodes() {
 				a.totalMaliciousNodesPerShard[shardID]++
 				a.totalMaliciousNodes++
 				visitedNodes[key] = true
-				//a.al.Plog.Printf("Counting Timeout node: ShardID %d, NodeID %d\n", shardID, nodeID)
 			}
 		}
 	}
@@ -629,7 +614,7 @@ func (a *AuditNode) handleConsensusMessage(content []byte) {
 		log.Panic(err5)
 	}
 	if consensusMsg.TotalConsensusRounds == 0 {
-		a.al.Plog.Printf("-------------------TotalConsensusRounds is 0--------------------------\n")
+		a.al.Plog.Printf("TotalConsensusRounds is 0\n")
 	}
 	successRate := float64(consensusMsg.SuccessfulRounds) / float64(consensusMsg.TotalConsensusRounds)
 	a.al.Plog.Printf("Audit Node: Consensus Success Rate: %.2f%%((successRounds: %d, TotalRounds: %d))\n", successRate*100, consensusMsg.SuccessfulRounds, consensusMsg.TotalConsensusRounds)
@@ -637,24 +622,24 @@ func (a *AuditNode) handleConsensusMessage(content []byte) {
 }
 func (a *AuditNode) CalculateMisjudgmentRate() {
 
-	// 1. 获取本分片已知恶意节点数
+	// 1. Get the number of known malicious nodes in the current shard
 	numMalicious := a.totalMaliciousNodesPerShard[a.ShardID]
 
-	// 2. 误判率参数
+	// 2. Misjudgment rate parameters
 	const (
-		baseRate           = 0.05 // 基础误判率
-		increaseRate       = 0.02 // 每增加一个恶意节点，误判率增加值
-		maxMisjudgmentRate = 0.1  // 最大误判率
-		randomRange        = 0.05 // 随机扰动幅度
+		baseRate           = 0.05 // Base misjudgment rate
+		increaseRate       = 0.02 // Increase in misjudgment rate for each additional malicious node
+		maxMisjudgmentRate = 0.1  // Maximum misjudgment rate
+		randomRange        = 0.05 // Random perturbation range
 	)
 
-	// 3. 计算动态误判率
+	// 3. Calculate dynamic misjudgment rate
 	dynamicRate := baseRate + increaseRate*float64(numMalicious)
 	if dynamicRate > maxMisjudgmentRate {
 		dynamicRate = maxMisjudgmentRate
 	}
 
-	// 4. 加入随机扰动
+	// 4. Add random perturbation
 	rand.Seed(time.Now().UnixNano())
 	randomizedRate := dynamicRate + randomRange*(rand.Float64()*2-1)
 	if randomizedRate < baseRate {
@@ -664,21 +649,18 @@ func (a *AuditNode) CalculateMisjudgmentRate() {
 		randomizedRate = maxMisjudgmentRate
 	}
 
-	// 5. 统计可疑节点和误判节点
+	// 5. Count suspicious nodes and misjudged nodes
 	for shardID, suspiciousNodes := range a.IsSuspiciousNodesPerShard {
 		lowRepNodes := a.LowReputationNodes[shardID]
 		timeoutNodes := a.TimeoutNodes[shardID]
 
 		for nodeID := range suspiciousNodes {
-			// 统计总可疑节点
 			if _, already := a.suspectedNodesSet[nodeID]; !already {
 				a.totalSuspected++
 				a.suspectedNodesSet[nodeID] = true
 			}
-			// 判断是否为恶意节点
 			isLowRep := lowRepNodes != nil && lowRepNodes[nodeID]
 			isTimeout := timeoutNodes != nil && timeoutNodes[nodeID]
-			// 如果不是恶意节点，则有概率被误判
 			if !isLowRep && !isTimeout {
 				if _, already := a.misjudgedNodesSet[nodeID]; !already {
 					if rand.Float64() < randomizedRate {
@@ -689,17 +671,17 @@ func (a *AuditNode) CalculateMisjudgmentRate() {
 			}
 		}
 
-		// 6. 计算实际误判率
+		// 6. Calculate actual misjudgment rate
 		if a.totalSuspected == 0 || numMalicious == 0 {
 			a.al.Plog.Printf("Audit Node: Shard %d Misjudgment rate = 0 (no suspected or no malicious nodes)\n", a.ShardID)
 			continue
 		}
 		actualMisjudgmentRate := float64(a.misjudgedNodes) / float64(numMalicious)
 
-		// 7. 综合误判率（加权平均）
+		// 7. Weighted average false positive rate.
 		combinedRate := 0.4*dynamicRate + 0.3*randomizedRate + 0.3*actualMisjudgmentRate
 
-		// 8. 日志输出
+		// 8. Log output
 		a.al.Plog.Printf(
 			"Audit Node: Shard %d Misjudgment rate: %.4f (misjudged: %d, suspected: %d, actual: %.4f, dynamic: %.4f, randomized: %.4f)\n",
 			a.ShardID, combinedRate, a.misjudgedNodes, a.totalSuspected, actualMisjudgmentRate, dynamicRate, randomizedRate,

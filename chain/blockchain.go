@@ -131,10 +131,6 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 			cnt++
 		}
 
-		// if senderIn && !recipientIn {
-		// 	// change this part to the pbft stage
-		// 	fmt.Printf("this transaciton is cross-shard txs, will be sent to relaypool later\n")
-		// }
 	}
 	// commit the memory trie to the database in the disk
 	if cnt == 0 {
@@ -207,7 +203,6 @@ func (bc *BlockChain) AddGenisisBlock(gb *core.Block) {
 	bc.CurrentBlock = curb
 }
 
-// ---添加一个区块add a block
 func (bc *BlockChain) AddBlock(b *core.Block) {
 	if b.Header.Number != bc.CurrentBlock.Header.Number+1 {
 		fmt.Println("the block height is not correct")

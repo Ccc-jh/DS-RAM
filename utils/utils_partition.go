@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-// the default method将交易地址作为发送到相应分片的依据
+// the default method
 func Addr2Shard(addr Address) int {
 	last16_addr := addr[len(addr)-8:]
 	num, err := strconv.ParseUint(last16_addr, 16, 64)

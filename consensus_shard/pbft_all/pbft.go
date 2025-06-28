@@ -65,8 +65,8 @@ type PbftConsensusNode struct {
 	askForLock   sync.Mutex // lock for asking for a serise of requests
 	stopLock     sync.Mutex // lock the stop varient
 
-	// ---其他分片的消息序列号 seqID of other Shards, to synchronize
-	seqIDMap   map[uint64]uint64 //---分片+序列号
+	// seqID of other Shards, to synchronize
+	seqIDMap   map[uint64]uint64 //
 	seqMapLock sync.Mutex
 
 	// logger
@@ -79,33 +79,24 @@ type PbftConsensusNode struct {
 	// to handle the message outside of pbft
 	ohm OpInterShards
 
-	//  节点的划分逻辑--定义一个通道来触发节点的划分
 	pNodeDiv chan uint64
-	division bool //节点划分标志
+	division bool
 
-	//	响应超时检测
 	prepareTimeout time.Duration
 	commitTimeout  time.Duration
 	prepareTimers  map[string]*time.Timer
 	commitTimers   map[string]*time.Timer
 
-	//	可疑节点
-	// 其他属性...
-
-	IsSuspicious   bool // 是否被标记为可疑节点
+	IsSuspicious   bool // Whether the node is marked as suspicious.
 	auditNode      *audit.AuditNode
 	MaliciousNodes map[uint64]map[uint64]bool
 	TimeoutNodes   map[uint64]map[uint64]bool
 
-	//共识成功率相关变量
 	totalConsensusRounds      uint64
 	successfulConsensusRounds uint64
-	//currentRoundInProgress    bool
-
-	//totalMaliciousNodes int
 }
 
-// ---构造函数，创建PBFT共识节点实例  generate a pbft consensus for a node
+// generate a pbft consensus for a node
 func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleType string) *PbftConsensusNode {
 	p := new(PbftConsensusNode)
 	p.ip_nodeTable = params.IPmap_nodeTable
@@ -125,17 +116,12 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 		log.Panic("cannot new a blockchain")
 	}
 	p.RunningNode = &shard.Node{
-		NodeID:  nodeID,
-		ShardID: shardID,
-		IPaddr:  p.ip_nodeTable[shardID][nodeID],
-		//Reputation:           reputation,
+		NodeID:               nodeID,
+		ShardID:              shardID,
+		IPaddr:               p.ip_nodeTable[shardID][nodeID],
 		Delay:                rand.Float64() * 100,
 		TransactionFrequency: rand.Float64() * 10,
 	}
-
-	//p.auditNode = auditNode
-
-	//go auditNode.DetectMaliciousBehavior(p.RunningNode)
 	p.stop = false
 	p.sequenceID = p.CurChain.CurrentBlock.Header.Number + 1
 	p.pStop = make(chan uint64)
@@ -146,16 +132,11 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 	p.isReply = make(map[string]bool)
 	p.height2Digest = make(map[uint64]string)
 
-	//超时模块
-	p.prepareTimeout = 5 * time.Second // 设置超时时间为5秒
-	p.commitTimeout = 5 * time.Second  // 设置超时时间为5秒
+	p.prepareTimeout = 5 * time.Second //
+	p.commitTimeout = 5 * time.Second  //
 	p.prepareTimers = make(map[string]*time.Timer)
 	p.commitTimers = make(map[string]*time.Timer)
 
-	//---设置恶意节点的数量
-	//p.malicious_nums = (p.node_nums - 1) / 3
-
-	//---当前视图为0
 	p.view = 0
 	p.seqIDMap = make(map[uint64]uint64)
 	p.pl = pbft_log.NewPbftLog(shardID, nodeID)
@@ -164,17 +145,11 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 	p.MaliciousNodes = make(map[uint64]map[uint64]bool)
 	p.TimeoutNodes = make(map[uint64]map[uint64]bool)
 	p.malicious_nums = uint64(p.TotalMaliciousNodes())
-	//p.successfulConsensusRounds = 0
-	//p.totalConsensusRounds = 0
-	//p.currentRoundInProgress = false
 
-	//节点划分(创建通道)
 	p.pNodeDiv = make(chan uint64)
 	p.division = false
 	p.InitMaliciousAndTimeoutNodes()
-
-	//p.totalMaliciousNodes = p.TotalMaliciousNodes()
-	// ---选择适当的委员会处理PBFT内部或者外部的消息  choose how to handle the messages in pbft or beyond pbft
+	//choose how to handle the messages in pbft or beyond pbft
 
 	p.ihm = &RawRelayPbftExtraHandleMod{
 		pbftNode: p,
@@ -206,9 +181,6 @@ func (p *PbftConsensusNode) handleMessage(msg []byte) {
 		p.WaitToStop()
 	case message.CNodeDivision:
 		p.HandleNodeDiv()
-	/*case message.CReputation:
-	p.handleReputation()*/
-	// handle the message from outside
 	default:
 		p.ohm.HandleMessageOutsidePBFT(msgType, content)
 	}
@@ -227,8 +199,6 @@ func (p *PbftConsensusNode) handleClientRequest(con net.Conn) {
 		switch err {
 		case nil:
 			p.tcpPoolLock.Lock()
-			//---引入节点的随机行为
-			//p.randomBehavior()
 			p.handleMessage(clientRequest)
 			p.tcpPoolLock.Unlock()
 		case io.EOF:
@@ -319,13 +289,13 @@ func (p *PbftConsensusNode) closePbft() {
 }
 
 func (p *PbftConsensusNode) HandleNodeDiv() {
-	p.pl.Plog.Println("在这里执行节点划分逻辑")
+	p.pl.Plog.Println("Execute the node partitioning logic here.")
 }
 func (p *PbftConsensusNode) InitMaliciousAndTimeoutNodes() {
 	shardCount := len(p.ip_nodeTable)
 	nodesPerShard := int(p.node_nums)
-	maliciousRatio := 0.2 // 20%为恶意节点
-	timeoutRatio := 0.3   // 30%为超时节点
+	maliciousRatio := 0.2 // 20% of malicious nodes
+	timeoutRatio := 0.3   // 30% of timeout nodes
 	for shardID := 0; shardID < shardCount; shardID++ {
 		nodeIDs := make([]uint64, 0, nodesPerShard)
 		for i := 0; i < nodesPerShard; i++ {
@@ -348,15 +318,12 @@ func (p *PbftConsensusNode) InitMaliciousAndTimeoutNodes() {
 }
 func (p *PbftConsensusNode) TotalMaliciousNodes() int {
 	totalMaliciousNodes := 0
-	// 检查分片 0 是否存在
 	if nodes, exists := p.TimeoutNodes[0]; exists {
-		// 遍历节点并计数
 		totalMaliciousNodes = len(nodes)
 	}
 	return totalMaliciousNodes
 }
 
-// 计算共识成功率
 func (p *PbftConsensusNode) CalculateSuccessRate() float64 {
 	if p.totalConsensusRounds == 0 {
 		p.pl.Plog.Printf("totalConsensusRounds is 0\n")

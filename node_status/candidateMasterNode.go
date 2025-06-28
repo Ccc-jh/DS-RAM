@@ -20,19 +20,7 @@ func DetermineNodeRole(reputation float64) int {
 	}
 }
 
-/*type NodeRole interface {
-	HandleMessage(message []byte)
-}*/
-
-// 候选主节点
-
 type CandidateMasterNode struct {
-	// 候选主节点特有的字段...
 	CMNode     *pbft_all.PbftConsensusNode
-	IsMainNode bool //是否为主节点
+	IsMainNode bool
 }
-
-/*func NewCandidateMasterNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleType string) *CandidateMasterNode {
-	cm := new(CandidateMasterNode)
-
-}*/

@@ -18,5 +18,5 @@ var (
 	LogWrite_path       = "./log"                                         // log output path
 	SupervisorAddr      = "127.0.0.1:18800"                               //supervisor ip address
 	FileInput           = `E:\code\2000000to2999999_BlockTransaction.csv` //the raw BlockTransaction data path
-	// FileInput = `/home/cjh/mywork/src/2000000to2999999_BlockTransaction.csv` //the raw BlockTransaction data path
+
 )

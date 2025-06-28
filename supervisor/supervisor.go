@@ -46,14 +46,8 @@ type Supervisor struct {
 	// measure components
 	testMeasureMods []measure.MeasureModule
 
-	// diy, add more structures or classes here ...
-	/*NodeRoles          map[uint64]map[uint64]string // 分片ID -> 节点ID -> 角色*/
-	//NodeRoleMutex sync.Mutex // 保护NodeRoles的锁
-	/*CandidateMainNodes []message.RegisterNode
-	ConsensusNodes     []message.RegisterNode
-	CandidateNodes     []message.RegisterNode*/
-	NodeReputations map[uint64]map[uint64]float64 // 分片ID -> 节点ID -> 信誉值
-	// 存储分片中恶意节点信息
+	NodeReputations map[uint64]map[uint64]float64
+
 	MaliciousNodes map[uint64]map[uint64]bool
 	TimeoutNodes   map[uint64]map[uint64]bool
 }
@@ -65,11 +59,6 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 
 	d.sl = supervisor_log.NewSupervisorLog()
 	d.Ss = signal.NewStopSignal(2 * int(pcc.ShardNums))
-	//d.NodeRoles = make(map[uint64]map[uint64]string)
-
-	/*d.CandidateMainNodes = make([]message.RegisterNode, 0)
-	d.ConsensusNodes = make([]message.RegisterNode, 0)
-	d.CandidateNodes = make([]message.RegisterNode, 0)*/
 
 	d.comMod = committee.NewRelayCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.FileInput, params.TotalDataSize, params.BatchSize)
 
@@ -122,13 +111,11 @@ func (d *Supervisor) handleBlockInfos(content []byte) {
 	// add codes here ...
 }
 
-// ---从文件中读取交易read transactions from dataFile. When the number of data is enough,
+// read transactions from dataFile. When the number of data is enough,
 //
-//	---与CLPA相关的：执行分区算法，发送分区结果到主节点the Supervisor will do re-partition and send partitionMSG and txs to leaders.
+//	the Supervisor will do re-partition and send partitionMSG and txs to leaders.
 func (d *Supervisor) SupervisorTxHandling() {
-	//
-	//d.sl.Slog.Printf("~~~~全部节点信息：~~~~~%v\n", pbft_all.ShardNodes)
-	//发送交易
+
 	d.comMod.MsgSendingControl()
 
 	// TxHandling is end
@@ -139,7 +126,6 @@ func (d *Supervisor) SupervisorTxHandling() {
 	// send stop message
 	stopmsg := message.MergeMessage(message.CStop, []byte("this is a stop message~"))
 	d.sl.Slog.Println("Supervisor: now sending cstop message to all nodes")
-	//---循环每个分片每个节点，发送终止消息
 	for sid := uint64(0); sid < d.ChainConfig.ShardNums; sid++ {
 		for nid := uint64(0); nid < d.ChainConfig.Nodes_perShard; nid++ {
 			networks.TcpDial(stopmsg, d.Ip_nodeTable[sid][nid])
@@ -245,15 +231,11 @@ func (d *Supervisor) OldTcpListen() {
 // close Supervisor, and record the data in .csv file
 func (d *Supervisor) CloseSupervisor() {
 	d.sl.Slog.Println("Closing...")
-	//---这里是遍历要测的性能（TPS、延迟、跨分片交易率---可增加）
 	for _, measureMod := range d.testMeasureMods {
-		//---测试的属性名
 		d.sl.Slog.Println(measureMod.OutputMetricName())
-		//---测试的属性值
 		d.sl.Slog.Println(measureMod.OutputRecord())
 		println()
 	}
-	//---存储到.csv表中
 	d.sl.Slog.Println("Trying to input .csv")
 	// write to .csv file
 	dirpath := params.DataWrite_path + "supervisor_measureOutput/"
@@ -304,7 +286,6 @@ func (d *Supervisor) CloseSupervisor() {
 	d.tcpLn.Close()
 }
 
-// ---处理候选主节点的信息，进行主节点的选择
 func (d *Supervisor) handleCandidateMasterNodeInfo(content []byte) {
 
 }
@@ -316,15 +297,12 @@ func (d *Supervisor) handleReputationInfo(content []byte) {
 		log.Panic(err)
 	}
 	d.sl.Slog.Printf("Supervisor: received reputation from S%dN%d: %.2f\n", repMsg.ShardID, repMsg.NodeID, repMsg.Reputation)
-	//calculateMaliciousDetectionRate()
-	// 确保 map 已初始化
 	d.NodeReputations[repMsg.ShardID][repMsg.NodeID] = repMsg.Reputation
 	d.calculateMaliciousDetectionRate()
 }
 func (d *Supervisor) calculateMaliciousDetectionRate() float64 {
 	const threshold = 50
 	var detectedMaliciousNodes, totalMaliciousNodes int
-	//计算低信誉值恶意节点
 	for _, shardNodes := range d.MaliciousNodes {
 		for _, isMalicious := range shardNodes {
 			if isMalicious {
@@ -332,15 +310,6 @@ func (d *Supervisor) calculateMaliciousDetectionRate() float64 {
 			}
 		}
 	}
-	//计算响应超时的节点
-	/*	for _, shardNodes2 := range d.TimeoutNodes {
-		for _, isMalicious := range shardNodes2 {
-			if isMalicious {
-				totalMaliciousNodes++
-			}
-		}
-	}*/
-	// 遍历所有分片节点的信誉值
 	for shardID, shardNodes := range d.NodeReputations {
 		for nodeID, reputation := range shardNodes {
 			if reputation < threshold || d.MaliciousNodes[shardID][nodeID] { // 信誉值低且已知为恶意节点
@@ -350,7 +319,6 @@ func (d *Supervisor) calculateMaliciousDetectionRate() float64 {
 		}
 	}
 	if totalMaliciousNodes == 0 {
-		d.sl.Slog.Printf("Supervisor: 没有已知的恶意节点\n")
 		return 0
 	}
 	detectionRate := float64(detectedMaliciousNodes) / float64(totalMaliciousNodes)

@@ -43,7 +43,6 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 
 	for _, tx := range txs {
 		if !tx.Time.IsZero() {
-			//randomOffset := float64(rand.Intn(4) + 5)
 			tml.totTxLatencyEpoch[epochid] += mTime.Sub(tx.Time).Seconds()
 			tml.txNum[epochid]++
 		}

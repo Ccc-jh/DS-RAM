@@ -17,12 +17,9 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 func (p *PbftConsensusNode) Propose() {
-	//确保主节点才能进行提议（更换主节点时这里需要修改）
 	if p.view != p.NodeID {
 		return
 	}
-
-	//--等待停止信号
 	for {
 
 		select {
@@ -34,11 +31,10 @@ func (p *PbftConsensusNode) Propose() {
 		time.Sleep(time.Duration(int64(p.pbftChainConfig.BlockInterval)) * time.Millisecond)
 
 		p.sequenceLock.Lock()
-		//判断是否是当前轮次，对总的共识轮次进行增加
+
 		p.pl.Plog.Printf("S%dN%d get sequenceLock locked, now trying to propose...\n", p.ShardID, p.NodeID)
 
 		// propose
-		// ---通过实现接口方法来实现区块提议  implement interface to generate propose
 		_, r := p.ihm.HandleinPropose()
 
 		digest := getDigest(r)
@@ -66,12 +62,9 @@ func (p *PbftConsensusNode) Propose() {
 		if err != nil {
 			log.Panic()
 		}
-		//每个分片内都执行自己的PBFT共识算法
 		msg_send1 := message.MergeMessage(message.CPrePrepare, ppbyte)
 		networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send1)
-		//--将节点注册信息只发送给supervisor节点
 		msg_send2 := message.MergeMessage(message.CRegisterNodeMessage, nrbyte)
-		//networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send2)
 		networks.TcpDial(msg_send2, p.ip_nodeTable[params.DeciderShard][0])
 
 	}
@@ -79,15 +72,11 @@ func (p *PbftConsensusNode) Propose() {
 }
 
 func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
-	//发送恶意节点信息到supervisor
 	p.sendMaliciousNodeInfo()
 	p.sendTimeoutNodeInfo()
 
 	p.RunningNode.PrintNode()
 	fmt.Println("received the PrePrepare ...")
-
-	// 发送开始处理消息给审计节点
-	p.pl.Plog.Printf("S%dN%d :PrePrepare阶段发送开始处理消息给审计节点\n", p.ShardID, p.NodeID)
 	startMsg := message.StartProcessingMessage{
 		ShardID: p.ShardID,
 		NodeID:  p.NodeID,
@@ -99,35 +88,25 @@ func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 
 	start_msg_send := message.MergeMessage(message.CStarMessge, startMsgBytes)
 	networks.TcpDial(start_msg_send, p.ip_nodeTable[p.ShardID][2])
-	p.pl.Plog.Printf("S%dN%d :PrePrepare阶段发送开始处理消息成功\n", p.ShardID, p.NodeID)
 
-	// 模拟节点在特定条件下的超时行为
+	// Simulate node timeout behavior under specific conditions.
 	if p.TimeoutNodes[p.ShardID][p.NodeID] {
-		// 延迟处理 PrePrepare 消息，模拟超时
 		time.Sleep(300 * time.Millisecond)
 	}
 	// decode the message
-	//---创建一个PrePrepare消息对象
 	ppmsg := new(message.PrePrepare)
-	//---将传入的消息内容 content 解析成 PrePrepare 结构体的形式
 	err := json.Unmarshal(content, ppmsg)
 	if err != nil {
 		log.Panic(err)
 	}
-	//---标记消息处理的结果(可以用来增减信誉值Reputation)
 	flag := false
-	//---检查PrePrepare消息的有效性，检查摘要digest和序列号SeqID是否一致
-	//---获取 PrePrepare 消息中请求消息的摘要（digest），并将其与 PrePrepare 消息中的摘要进行比较
 	if digest := getDigest(ppmsg.RequestMsg); string(digest) != string(ppmsg.Digest) {
-		//---摘要不一致，拒绝
 		p.pl.Plog.Printf("S%dN%d : the digest is not consistent, so refuse to prepare. \n", p.ShardID, p.NodeID)
 		p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
-	} else if p.sequenceID < ppmsg.SeqID { //---节点的序列号小于 PrePrepare 消息中的序列号
-		//---将请求消息存储在请求池中，并将序列号与摘要关联起来
+	} else if p.sequenceID < ppmsg.SeqID {
 		p.requestPool[string(getDigest(ppmsg.RequestMsg))] = ppmsg.RequestMsg
 		p.height2Digest[ppmsg.SeqID] = string(getDigest(ppmsg.RequestMsg))
 		p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
-		//---序列号不一致，拒绝处理
 		p.pl.Plog.Printf("S%dN%d : the Sequence id is not consistent, so refuse to prepare. \n", p.ShardID, p.NodeID)
 
 	} else {
@@ -135,10 +114,9 @@ func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 		flag = p.ihm.HandleinPrePrepare(ppmsg)
 		p.requestPool[string(getDigest(ppmsg.RequestMsg))] = ppmsg.RequestMsg
 		p.height2Digest[ppmsg.SeqID] = string(getDigest(ppmsg.RequestMsg))
-		//模拟信誉值异常
 
 	}
-	// ---如果PrePrepare消息处理成功，广播Prepare消息   if the message is true, broadcast the prepare message
+	//if the message is true, broadcast the prepare message
 	if flag {
 		pre := message.Prepare{
 			Digest:     ppmsg.Digest,
@@ -149,14 +127,12 @@ func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 		if err != nil {
 			log.Panic()
 		}
-		// ---广播PrePare消息 broadcast
+		// broadcast
 		msg_send := message.MergeMessage(message.CPrepare, prepareByte)
 		networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send)
 		p.pl.Plog.Printf("S%dN%d : has broadcast the prepare message \n", p.ShardID, p.NodeID)
-		// 发送结束处理消息给审计节点
-		p.pl.Plog.Printf("S%dN%d :PrePrepare阶段发送结束处理消息给审计节点\n", p.ShardID, p.NodeID)
 
-		for shardID, nodes := range p.TimeoutNodes {
+		for _, nodes := range p.TimeoutNodes {
 			nodeIDs := make([]uint64, 0, len(nodes))
 			for nodeID := range nodes {
 				nodeIDs = append(nodeIDs, nodeID)
@@ -171,36 +147,29 @@ func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 			if err2 != nil {
 				log.Panic()
 			}
-			// 发送信息到Supervisor，假设Supervisor的IP地址是存储在ip_nodeTable中，并且节点ID为0
 			finish_msg_send := message.MergeMessage(message.CFinishMessage, finishtMsgBytes)
 			networks.TcpDial(finish_msg_send, p.ip_nodeTable[p.ShardID][2])
-			p.pl.Plog.Printf("发送响应超时节点信息: ShardID: %d, NodeIDs: %v\n", shardID, nodeIDs)
 		}
-		p.pl.Plog.Printf("S%dN%d :PrePrepare阶段发送结束处理消息成功\n", p.ShardID, p.NodeID)
 		// decode the message
-		//--节点广播消息之后，对其进行增加声誉
 		p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
 
 	}
 }
 
-// ---接收并处理Prepare消息，需要计算收到的消息的数量
 func (p *PbftConsensusNode) handlePrepare(content []byte) {
-	// 模拟如果是恶意节点，直接返回，不发送 Commit 消息，不进行投票
 	if p.TimeoutNodes[p.ShardID][p.NodeID] {
 		p.pl.Plog.Printf("S%dN%d : is a malicious node, skipping Commit message.\n", p.ShardID, p.NodeID)
 		return
 	}
 	flag := false
 	p.pl.Plog.Printf("S%dN%d : received the Prepare ...\n", p.ShardID, p.NodeID)
-	// ---解析消息decode the message
+	// decode the message
 	pmsg := new(message.Prepare)
 	err := json.Unmarshal(content, pmsg)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	//---标记消息处理的结果(可以用来增减信誉值Reputation)
 	if _, ok := p.requestPool[string(pmsg.Digest)]; !ok {
 		p.pl.Plog.Printf("S%dN%d : doesn't have the digest in the requst pool, refuse to commit\n", p.ShardID, p.NodeID)
 		p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
@@ -208,15 +177,14 @@ func (p *PbftConsensusNode) handlePrepare(content []byte) {
 		p.pl.Plog.Printf("S%dN%d : inconsistent sequence ID, refuse to commit\n", p.ShardID, p.NodeID)
 		p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
 	} else {
-		// ---增加额外的操作  if needed more operations, implement interfaces
+		// if needed more operations, implement interfaces
 		flag = p.ihm.HandleinPrepare(pmsg)
 		p.set2DMap(true, string(pmsg.Digest), pmsg.SenderNode)
 		cnt := 0
-		//---计算已经确认的Prepare消息数量    如何让它不确认？
+		//
 		for range p.cntPrepareConfirm[string(pmsg.Digest)] {
 			cnt++
 		}
-		p.pl.Plog.Printf("S%dN%d : Prepare中的cnt=%d\n", p.ShardID, p.NodeID, cnt)
 		// the main node will not send the prepare message
 		specifiedcnt := int(2 * p.malicious_nums)
 		if p.NodeID != p.view {
@@ -242,19 +210,13 @@ func (p *PbftConsensusNode) handlePrepare(content []byte) {
 			networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send)
 			p.isCommitBordcast[string(pmsg.Digest)] = true
 			p.pl.Plog.Printf("S%dN%d : commit is broadcast\n", p.ShardID, p.NodeID)
-			//p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
-			//p.pl.Plog.Printf("----S%dN%d:当前信誉值:%.2f\n----", p.ShardID, p.NodeID, ReputationMap[p.ShardID][p.NodeID])
 
 		}
 	}
 }
 
-// ---接收并处理Commit消息，需要计算收到的消息的数量
 func (p *PbftConsensusNode) handleCommit(content []byte) {
 	p.totalConsensusRounds += 1
-	//--------------------------------------------------------------------------------------------------------
-	// 发送开始处理消息给审计节点
-	p.pl.Plog.Printf("S%dN%d :Commit阶段发送开始处理消息给审计节点 \n", p.ShardID, p.NodeID)
 	if p.TimeoutNodes[p.ShardID][p.NodeID] {
 		p.pl.Plog.Printf("S%dN%d : is a malicious node, skipping Commit message.\n", p.ShardID, p.NodeID)
 		return
@@ -267,16 +229,9 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 	if err1 != nil {
 		log.Panic()
 	}
-
-	// 如果是恶意节点，直接返回，不发送 Commit 消息，不进行投票
-
 	start_msg_send := message.MergeMessage(message.CStarMessge, startMsgBytes)
 	networks.TcpDial(start_msg_send, p.ip_nodeTable[p.ShardID][2])
-	p.pl.Plog.Printf("S%dN%d :Commit阶段发送开始处理消息成功\n", p.ShardID, p.NodeID)
-	//---------------------------------------------------------------------------------------------------------------------
-
 	if p.TimeoutNodes[p.ShardID][p.NodeID] {
-		// 延迟处理 PrePrepare 消息，模拟超时
 		time.Sleep(300 * time.Millisecond)
 	}
 	if p.MaliciousNodes[p.ShardID][p.NodeID] {
@@ -293,27 +248,21 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 	p.pl.Plog.Printf("S%dN%d received the Commit from ...%d\n", p.ShardID, p.NodeID, cmsg.SenderNode.NodeID)
 
 	p.set2DMap(false, string(cmsg.Digest), cmsg.SenderNode)
-
-	//---计算已经确认了的Commit消息的数量
 	cnt := 0
-	//恶意节点不会对cnt进行增加
 	for range p.cntCommitConfirm[string(cmsg.Digest)] {
 		cnt++
 	}
-	p.pl.Plog.Printf("S%dN%d : Commit中的cnt=%d\n", p.ShardID, p.NodeID, cnt)
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	// the main node will not send the prepare message
 	required_cnt := int(2 * p.malicious_nums)
-	p.pl.Plog.Printf("&&&&&&&&&&&&&&&&&&&&恶意节点数量=%d&&&&&&&&&&&&&&&&&\n", p.malicious_nums)
 
 	if cnt >= required_cnt && !p.isReply[string(cmsg.Digest)] {
 		p.pl.Plog.Printf("S%dN%d : has received 2f + 1 commits ... \n", p.ShardID, p.NodeID)
 		//UpdateReputation(p, true)
 		// if this node is left behind, so it need to requst blocks
 		p.successfulConsensusRounds += 1
-		//统计共识成功率
-		p.pl.Plog.Printf("S%dN%d: 共识成功\n", p.ShardID, p.NodeID)
+		//Calculate the consensus success rate.
 		if _, ok := p.requestPool[string(cmsg.Digest)]; !ok {
 			p.isReply[string(cmsg.Digest)] = true
 			p.askForLock.Lock()
@@ -343,10 +292,6 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 			flag = p.ihm.HandleinCommit(cmsg)
 			p.isReply[string(cmsg.Digest)] = true
 			p.UpdateReputation1(ReputationMap, p.ShardID, p.NodeID, flag)
-			p.pl.Plog.Printf("S%dN%d:当前信誉值:  %.2f\n", p.ShardID, p.NodeID, ReputationMap[p.ShardID][p.NodeID])
-
-			//发送信誉值给Supervisor
-			fmt.Println("发送节点的信誉值信息到Supervisor")
 			reputationMsg := message.ReputationMessage{
 				ShardID:    p.ShardID,
 				NodeID:     p.NodeID,
@@ -357,17 +302,10 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 				log.Panic(err)
 			}
 			rep_msg_send := message.MergeMessage(message.CReputationMessage, reputationMsgBytes)
-			// 这里假设Supervisor的IP地址是存储在ip_nodeTable中，并且节点ID为2
 			networks.TcpDial(rep_msg_send, p.ip_nodeTable[params.DeciderShard][0])
-			fmt.Println("-----发送成功-----")
-
 			p.pl.Plog.Printf("S%dN%d: this round of pbft %d is end \n", p.ShardID, p.NodeID, p.sequenceID)
 
 			p.sequenceID += 1
-			//增加总的共识轮次
-
-			//p.currentRoundInProgress = false
-			// 本轮次处理完毕，重置状态
 			if p.MaliciousNodes[p.ShardID][p.NodeID] {
 				TestNodeInit(ReputationMap, p.ShardID, p.NodeID)
 			}
@@ -378,17 +316,10 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 			p.sequenceLock.Unlock()
 			p.pl.Plog.Printf("S%dN%d get sequenceLock unlocked...\n", p.ShardID, p.NodeID)
 		}
-		//p.stopCommitTimer(string(cmsg.Digest))
-	} else {
-		//p.updateConsensusStatistics(false)
-		p.pl.Plog.Printf("S%dN%d: ---------------------共识失败------------------------\n", p.ShardID, p.NodeID)
-
 	}
 
-	//将统计的共识结果发送给审计节点
+	//Send the collected consensus results to the audit nodes.
 	p.sendConsensusInfo()
-	// 发送结束处理消息给审计节点
-	p.pl.Plog.Printf("S%dN%d :Commit阶段发送结束处理消息给审计节点\n", p.ShardID, p.NodeID)
 	finishMsg := message.FinishProcessingMessage{
 		ShardID: p.ShardID,
 		NodeId:  p.NodeID,
@@ -399,7 +330,6 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 	}
 	finish_msg_send := message.MergeMessage(message.CFinishMessage, finishtMsgBytes)
 	networks.TcpDial(finish_msg_send, p.ip_nodeTable[p.ShardID][2])
-	p.pl.Plog.Printf("#####S%dN%d :Commit阶段发送结束处理消息成功####\n", p.ShardID, p.NodeID)
 
 }
 
@@ -504,61 +434,49 @@ func (p *PbftConsensusNode) handleSendOldSeq(content []byte) {
 }
 
 func (p *PbftConsensusNode) UpdateReputation1(reputationMap map[uint64]map[uint64]float64, shardID, nodeID uint64, consensusResult bool) {
-	// 获取节点的当前信誉值
-	// 如果节点在映射中不存在，则创建一个新的条目
 	if reputationMap[shardID] == nil {
 		reputationMap[shardID] = make(map[uint64]float64)
 	}
-	// 如果节点的信誉值在映射中不存在，则初始化为默认值
 	if _, ok := reputationMap[shardID][nodeID]; !ok {
 		reputationMap[shardID][nodeID] = 60.0
 	}
 	reputation := reputationMap[shardID][nodeID]
-	// 根据共识结果更新信誉值
 	if consensusResult && !p.IsMaliciousNode(shardID, nodeID) {
-		reputation += 1 // 如果处理成功，增加5个信誉值
+		reputation += 1
 		if reputation > 100 {
-			reputation = 100 // 信誉值下限为0
+			reputation = 100
 		}
-		/*if reputation > 90 && reputation < 100 {
-			reputation = 90 - rand.Float64()*10 // 信誉值上限为100
-		} else if reputation > 100 {
-			reputation = 100 - rand.Float64()*10
-		}*/
 	} else {
 		if !p.IsMaliciousNode(shardID, nodeID) {
-			reputation -= 5 // 如果处理失败，减少10个信誉值
+			reputation -= 5
 		}
 		if reputation < 0 {
-			reputation = 0 // 信誉值下限为0
+			reputation = 0
 		}
 	}
-	// 将更新后的信誉值存储回ReputationMap中
+
 	reputationMap[shardID][nodeID] = reputation
-	fmt.Printf("++++++++++++Updated reputation for S%dN%d: %f++++++++++++\n", shardID, nodeID, reputation)
+
 }
 
-// 信誉值异常行为函数
+// Reputation anomaly detection function.
 func TestNodeInit(reputationMap map[uint64]map[uint64]float64, shardID, nodeID uint64) {
 	if reputationMap[shardID] == nil {
 		reputationMap[shardID] = make(map[uint64]float64)
 	}
-	// 如果节点的信誉值在映射中不存在，则初始化为默认值
 	if _, ok := reputationMap[shardID][nodeID]; !ok {
 		reputationMap[shardID][nodeID] = 60.0
 	}
 	reputation := reputationMap[shardID][nodeID]
 	randomReduction := rand.Float64()*10 + 1
-	// 根据共识结果更新信誉值
 	reputation -= randomReduction
 	if reputation < 0 {
-		reputation = 0 // 信誉值下限为0
+		reputation = 0
 
 	}
 	reputationMap[shardID][nodeID] = reputation
 }
 
-// 设置恶意节点的方法
 func (p *PbftConsensusNode) SetMaliciousNodes(shardID uint64, nodeIDs []uint64) {
 	if p.MaliciousNodes[shardID] == nil {
 		p.MaliciousNodes[shardID] = make(map[uint64]bool)
@@ -568,22 +486,19 @@ func (p *PbftConsensusNode) SetMaliciousNodes(shardID uint64, nodeIDs []uint64) 
 	}
 	for _, nodeID := range nodeIDs {
 		p.MaliciousNodes[shardID][nodeID] = true
-		ReputationMap[shardID][nodeID] = float64(uint64(rand.Intn(51))) // 设置一个较低的信誉值
+		ReputationMap[shardID][nodeID] = float64(uint64(rand.Intn(51)))
 	}
 }
 
-// 设置恶意节点的方法
 func (p *PbftConsensusNode) SetTimeoutNodes(shardID uint64, nodeIDs []uint64) {
 	if p.TimeoutNodes[shardID] == nil {
 		p.TimeoutNodes[shardID] = make(map[uint64]bool)
 	}
 	for _, nodeID := range nodeIDs {
 		p.TimeoutNodes[shardID][nodeID] = true
-		//ReputationMap[shardID][nodeID] = float64(uint64(rand.Intn(51))) // 设置一个较低的信誉值
 	}
 }
 
-// 判断节点是否是低信誉值恶意节点
 func (p *PbftConsensusNode) IsMaliciousNode(shardID, nodeID uint64) bool {
 	if nodes, exists := p.MaliciousNodes[shardID]; exists {
 		return nodes[nodeID]
@@ -592,9 +507,7 @@ func (p *PbftConsensusNode) IsMaliciousNode(shardID, nodeID uint64) bool {
 	return false
 }
 
-// 判断节点是否是响应超时的恶意节点
 func (p *PbftConsensusNode) IsTimeoutNode(shardID, nodeID uint64) bool {
-	// 检查是否是超时节点
 	if timeoutNodes, exists := p.TimeoutNodes[shardID]; exists {
 		if timeoutNodes[nodeID] {
 			p.IsSuspicious = true
@@ -604,7 +517,7 @@ func (p *PbftConsensusNode) IsTimeoutNode(shardID, nodeID uint64) bool {
 	return false
 }
 
-// 发送恶意节点信息
+// Send malicious node information.
 func (p *PbftConsensusNode) sendMaliciousNodeInfo() {
 	for shardID, nodes := range p.MaliciousNodes {
 		nodeIDs := make([]uint64, 0, len(nodes))
@@ -619,17 +532,14 @@ func (p *PbftConsensusNode) sendMaliciousNodeInfo() {
 		if err != nil {
 			log.Panic(err)
 		}
-		// 发送信息到Supervisor，假设Supervisor的IP地址是存储在ip_nodeTable中，并且节点ID为0
 		malicious_msg_send := message.MergeMessage(message.CMaliciousNodeMessage, maliciousMsgBytes)
-		networks.TcpDial(malicious_msg_send, p.ip_nodeTable[params.DeciderShard][0]) //发送给supervisor
-		networks.TcpDial(malicious_msg_send, p.ip_nodeTable[p.ShardID][2])           //发送给Audit审计节点
-		p.pl.Plog.Printf("发送恶意节点信息: ShardID: %d, NodeIDs: %v\n", shardID, nodeIDs)
+		networks.TcpDial(malicious_msg_send, p.ip_nodeTable[params.DeciderShard][0])
+		networks.TcpDial(malicious_msg_send, p.ip_nodeTable[p.ShardID][2])
 	}
 
 }
 
 func (p *PbftConsensusNode) sendTimeoutNodeInfo() {
-	// 发送超时节点信息
 	for shardID, nodes := range p.TimeoutNodes {
 		nodeIDs := make([]uint64, 0, len(nodes))
 		for nodeID := range nodes {
@@ -644,11 +554,9 @@ func (p *PbftConsensusNode) sendTimeoutNodeInfo() {
 		if err != nil {
 			log.Panic(err)
 		}
-		// 发送信息到Supervisor，假设Supervisor的IP地址是存储在ip_nodeTable中，并且节点ID为0
 		timeoutMsgSend := message.MergeMessage(message.CTimeoutMessage, timeoutMsgBytes)
-		networks.TcpDial(timeoutMsgSend, p.ip_nodeTable[params.DeciderShard][0]) //发送给supervisor
-		networks.TcpDial(timeoutMsgSend, p.ip_nodeTable[p.ShardID][2])           //发送给Audit审计节点
-		p.pl.Plog.Printf("发送超时节点信息: ShardID: %d, NodeIDs: %v\n", shardID, nodeIDs)
+		networks.TcpDial(timeoutMsgSend, p.ip_nodeTable[params.DeciderShard][0])
+		networks.TcpDial(timeoutMsgSend, p.ip_nodeTable[p.ShardID][2])
 	}
 }
 
@@ -663,7 +571,6 @@ func getNodeRole(reputation float64) string {
 	}
 }
 
-// 将收集到的共识轮次变量发送给审计节点
 func (p *PbftConsensusNode) sendConsensusInfo() {
 	ConsensusMsg := message.ConsensusRateMessage{
 		ShardID:              p.ShardID,
@@ -676,33 +583,4 @@ func (p *PbftConsensusNode) sendConsensusInfo() {
 	}
 	consensus_msg_send := message.MergeMessage(message.CConsensusRateMessage, consensusMsgBytes)
 	networks.TcpDial(consensus_msg_send, p.ip_nodeTable[p.ShardID][2])
-	p.pl.Plog.Printf("------发送共识总轮次和共识成功轮次到Audit-------------\n")
 }
-
-// shouldVote 是一个根据特定条件决定节点是否投票的函数
-/*func (p *PbftConsensusNode) shouldVote() bool {
-	if p.TimeoutNodes[p.ShardID][p.NodeID] {
-		return false
-	}
-	if p.MaliciousNodes[p.ShardID][p.NodeID] {
-		return false
-	}
-	return true
-}*/
-
-// 在每一轮共识结束后更新共识统计
-/*func (p *PbftConsensusNode) updateConsensusStatistics(success bool) {
-	p.totalConsensusRounds++
-	if success {
-		p.successfulConsensusRounds++
-	}
-}*/
-
-/*// 计算共识成功率
-func (p *PbftConsensusNode) calculateConsensusSuccessRate() float64 {
-	if p.sequenceID == 0 {
-		return 0.0
-	}
-	return float64(p.successfulConsensusRounds) / float64(p.sequenceID)
-}
-*/

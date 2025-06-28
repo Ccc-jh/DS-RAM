@@ -17,7 +17,7 @@ import (
 
 /*
 *
-获取节点的交互频率
+Obtain the interaction frequency of nodes.
 */
 var (
 	AllNodes map[uint64]map[uint64]*pbft_all.PbftConsensusNode
@@ -25,32 +25,29 @@ var (
 )
 
 func InitConfig(nid, nnm, sid, snm uint64) *params.ChainConfig {
-	csvPath := params.FileInput          // CSV 文件路径
-	dataTotalNum := params.TotalDataSize // 总数据数
-	batchDataNum := params.BatchSize     // 每批数据数
+	csvPath := params.FileInput
+	dataTotalNum := params.TotalDataSize
+	batchDataNum := params.BatchSize
 
 	txs := committee.GetTransactions1(csvPath, uint64(dataTotalNum), uint64(batchDataNum))
 
-	fmt.Println("--------获取节点交互频率------")
 	freq := KMedoids.CalculateInteractionFrequency(txs)
 
-	fmt.Println("--------获取交互频率完成------")
 	maxNodesPerCluster := nnm
 	maxIterations := 550
 	nodes := shard.GenerateNodes(snm, nnm, freq)
-	fmt.Println("--------执行聚类算法------")
+	//Execute the clustering algorithm.
 	medoids, clusters := KMedoids.KMedoids(nodes, int(snm), maxIterations, int(maxNodesPerCluster))
-	fmt.Println("--------聚类完成------")
 	for i := 0; i < int(snm); i++ {
 		if len(clusters[i]) > int(maxNodesPerCluster) {
 			// Sort nodes in the current cluster by their distance to the medoid
 			sort.SliceStable(clusters[i], func(a, b int) bool {
 				return KMedoids.CalculateWeightedDistance(clusters[i][a], medoids[i]) < KMedoids.CalculateWeightedDistance(clusters[i][b], medoids[i])
 			})
-			// 删除超出数量的节点
+			// Remove nodes exceeding the quantity limit.
 			for j := maxNodesPerCluster; int(j) < len(clusters[i]); j++ {
 				nextCluster := (i + 1) % int(snm)
-				// 移动到第二相似的簇中
+				// Move to the second most similar cluster
 				clusters[nextCluster] = append(clusters[nextCluster], clusters[i][j])
 			}
 			// Keep only the first maxNodesPerCluster nodes in the current cluster
@@ -59,19 +56,16 @@ func InitConfig(nid, nnm, sid, snm uint64) *params.ChainConfig {
 	}
 
 	for i, cluster := range clusters {
-		shardID := i // 簇的索引作为分片ID
+		shardID := i
 		for j, _ := range cluster {
-			clusters[i][j].ShardAfter = uint64(shardID) // 更新clusters中对应节点的ShardAfter字段
+			clusters[i][j].ShardAfter = uint64(shardID)
 
 		}
 	}
-	// 重新分配节点 ID
+	// Reassign node IDs.
 	for i, cluster := range clusters {
 		for j, _ := range cluster {
-			// 计算新的节点 ID，从 0 开始递增
-
 			newID := uint64(j)
-			// 更新节点的 ID
 			clusters[i][j].NodeID = newID
 		}
 	}
@@ -82,23 +76,14 @@ func InitConfig(nid, nnm, sid, snm uint64) *params.ChainConfig {
 			fmt.Printf("NodeID: %d, ShardAfter: %d,shardID: %d\n", node.NodeID, node.ShardAfter, node.ShardID)
 		}
 	}
-	//初始化节点的信誉值60.0
-	/*	ReputationMap = make(map[uint64]map[uint64]float64)
-		for i := uint64(0); i < snm; i++ {
-			ReputationMap[i] = make(map[uint64]float64)
-			for j := uint64(0); j < nnm; j++ {
-				ReputationMap[i][j] = 60.0
-			}
-		}*/
 
-	//初始化节点的IP地址
 	for i := uint64(0); i < snm; i++ {
-		// 检查当前分片是否在 IPmap_nodeTable 中已经存在，如果不存在则创建一个新的映射
+		// Check if the current shard already exists in the IPmap_nodeTable. If it does not exist, create a new mapping.
 		if _, ok := params.IPmap_nodeTable[i]; !ok {
 			params.IPmap_nodeTable[i] = make(map[uint64]string)
 
 		}
-		// 遍历当前分片的节点，为每个节点设置 IP 地址
+		// Iterate through the nodes in the current shard and assign an IP address to each node.
 		for j := uint64(0); j < nnm; j++ {
 			params.IPmap_nodeTable[i][clusters[int(i)][j].NodeID] = "127.0.0.1:" + strconv.Itoa(28800+int(i)*100+int(j))
 

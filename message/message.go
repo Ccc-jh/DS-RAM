@@ -28,7 +28,6 @@ const (
 
 	CNodeDivision MessageType = "nodeDivision"
 
-	//用来将节点的身份发送到supervisor
 	CRegisterNodeMessage        MessageType = "RegisterNode"
 	CCandidateMasterNodeMessage MessageType = "CandidateMasterNode"
 	CStarMessge                 MessageType = "StartProcessingMessage"
@@ -46,7 +45,6 @@ var (
 	// ...
 )
 
-// 节点注册消息
 type RegisterNode struct {
 	NodeID     uint64
 	ShardID    uint64
@@ -55,27 +53,23 @@ type RegisterNode struct {
 	SeqID      uint64
 }
 
-// 候选主节点消息
 type CandidateMasterNodeMessage struct {
 	NodeID     uint64
 	ShardID    uint64
 	IsMainNode bool
 }
 
-// 信誉消息
 type ReputationMessage struct {
 	NodeID     uint64
 	ShardID    uint64
 	Reputation float64
 }
 
-// 开始处理消息
 type StartProcessingMessage struct {
 	NodeID  uint64
 	ShardID uint64
 }
 
-// 结束处理消息
 type FinishProcessingMessage struct {
 	NodeIDs []uint64
 	ShardID uint64
@@ -93,7 +87,6 @@ type TimeoutNodeMessage struct {
 	NodeId  uint64
 }
 
-// 共识率相关
 type ConsensusRateMessage struct {
 	ShardID              uint64
 	TotalConsensusRounds uint64
@@ -200,13 +193,11 @@ func SplitMessage(message []byte) (MessageType, []byte) {
 	return MessageType(msgType), content
 }
 
-// 将消息编码为 JSON 字符串
 func (msg *RegisterNode) Encode1() []byte {
 	data, _ := json.Marshal(msg)
 	return data
 }
 
-// 从 JSON 字符串解码为消息结构
 func DecodeRegisterNodeMessage(data []byte) (*RegisterNode, error) {
 	var msg RegisterNode
 	err := json.Unmarshal(data, &msg)

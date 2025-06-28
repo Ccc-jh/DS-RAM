@@ -9,27 +9,28 @@ import (
 	"blockEmulator/shard"
 	"bufio"
 	"encoding/json"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"io"
 	"log"
 	"math/rand"
 	"net"
 	"strconv"
 	"sync"
+
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
 )
 
 type PbftCandidateNode struct {
 	// the local config about pbft
-	RunningNode *shard.Node // ---当前共识节点的信息the node information
+	RunningNode *shard.Node // the node information
 	ShardID     uint64      // denote the ID of the shard (or pbft), only one pbft consensus in a shard
 	NodeID      uint64      // denote the ID of the node in the pbft (shard)
 
 	CurChain *chain.BlockChain
 	db       ethdb.Database
 
-	pbftChainConfig *params.ChainConfig          //---链的配置信息 the chain config in this pbft
-	ip_nodeTable    map[uint64]map[uint64]string // ---节点ID到IP地址的映射表denote the ip of the specific node
+	pbftChainConfig *params.ChainConfig          // the chain config in this pbft
+	ip_nodeTable    map[uint64]map[uint64]string // denote the ip of the specific node
 	node_nums       uint64                       // the number of nodes in this pfbt, denoted by N
 	view            uint64
 
@@ -45,7 +46,7 @@ type PbftCandidateNode struct {
 	lock         sync.Mutex // lock the stage
 	askForLock   sync.Mutex // lock for asking for a serise of requests
 	stopLock     sync.Mutex // lock the stop varient
-	//malicious_nums  uint64                       // ---恶意节点的数量f, 3f + 1 = N
+	//malicious_nums  uint64                       // f, 3f + 1 = N
 
 	// logger
 	cl *candidate_log.CandidateLog
@@ -69,7 +70,6 @@ func NewCandidateNode(shardID, nodeID uint64, pcc *params.ChainConfig) *PbftCand
 
 	fp := "./record/ldb/s" + strconv.FormatUint(shardID, 10) + "/n" + strconv.FormatUint(nodeID, 10)
 	var err error
-	//---创建了一个LevelDB数据库
 	c.db, err = rawdb.NewLevelDBDatabase(fp, 0, 1, "accountState", false)
 	if err != nil {
 		log.Panic(err)
@@ -80,10 +80,9 @@ func NewCandidateNode(shardID, nodeID uint64, pcc *params.ChainConfig) *PbftCand
 	}
 
 	c.RunningNode = &shard.Node{
-		NodeID:  nodeID,
-		ShardID: shardID,
-		IPaddr:  c.ip_nodeTable[shardID][nodeID],
-		//Reputation:           reputation,
+		NodeID:               nodeID,
+		ShardID:              shardID,
+		IPaddr:               c.ip_nodeTable[shardID][nodeID],
 		Delay:                rand.Float64() * 100,
 		TransactionFrequency: rand.Float64() * 10,
 	}
@@ -99,7 +98,7 @@ func NewCandidateNode(shardID, nodeID uint64, pcc *params.ChainConfig) *PbftCand
 }
 
 func (c *PbftCandidateNode) PrintCanMessg() {
-	c.cl.Plog.Println("我是候选节点")
+	c.cl.Plog.Println("Candidate node")
 }
 
 func (c *PbftCandidateNode) handleMessage(msg []byte) {
@@ -133,9 +132,7 @@ func (c *PbftCandidateNode) closePbft() {
 	c.CurChain.CloseBlockChain()
 }
 
-// ---TCP监听器，接受来自其他节点的请求并处理
 func (c *PbftCandidateNode) TcpListen() {
-	//---利用当前节点IP和端口创建TCP监听器
 	ln, err := net.Listen("tcp", c.RunningNode.IPaddr)
 	c.tcpln = ln
 	if err != nil {
@@ -146,19 +143,15 @@ func (c *PbftCandidateNode) TcpListen() {
 		if err != nil {
 			return
 		}
-		//---在循环中启动新线程，实现同时处理多个请求
 		go c.handleClientRequest(conn)
 	}
 }
 
-// ---处理客户的请求消息
 func (c *PbftCandidateNode) handleClientRequest(con net.Conn) {
 	defer con.Close()
 	clientReader := bufio.NewReader(con)
 	for {
-		//---不断读取数据
 		clientRequest, err := clientReader.ReadBytes('\n')
-		//---是否接收到停止信号
 		if c.getStopSignal() {
 			return
 		}
@@ -219,8 +212,6 @@ func (c *PbftCandidateNode) handleCanCommit(content []byte) {
 		msg_send := message.MergeMessage(message.CRequestOldrequest, bromyte)
 		networks.TcpDial(msg_send, orequest.ServerNode.IPaddr)
 	} else {
-		// 更新状态或记录共识结果
-		//c.ihm.HandleinCommit(cmsg)
 		c.isReply[string(cmsg.Digest)] = true
 		c.cl.Plog.Printf("S%dN%d: this round of pbft %d is end \n", c.ShardID, c.NodeID, c.sequenceID)
 		c.sequenceID += 1

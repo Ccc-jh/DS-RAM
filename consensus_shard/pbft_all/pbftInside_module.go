@@ -20,11 +20,10 @@ type RawRelayPbftExtraHandleMod struct {
 	// pointer to pbft data
 }
 
-// ---提议不同类型请求的方法propose request with different types
+// propose request with different types
 func (rphm *RawRelayPbftExtraHandleMod) HandleinPropose() (bool, *message.Request) {
-	// ---生成新块 new blocks
+	//  new blocks
 	block := rphm.pbftNode.CurChain.GenerateBlock()
-	//---创建请求（区块请求）
 	r := &message.Request{
 		RequestType: message.BlockRequest,
 		ReqTime:     time.Now(),
@@ -49,39 +48,20 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinPrePrepare(ppmsg *message.PrePre
 }
 
 // the operation in prepare, and in pbft + tx relaying, this function does not need to do any.
-// 把节点自身的角色信息发送到supervisor当中
 func (rphm *RawRelayPbftExtraHandleMod) HandleinPrepare(pmsg *message.Prepare) bool {
 	rphm.pbftNode.UpdateReputation1(ReputationMap, rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, true)
-	/*//fmt.Println("-----发送节点的角色信息到Supervisor-----")
-	rolemsg := message.RegisterNode{
-		ShardID:    rphm.pbftNode.ShardID,
-		NodeID:     rphm.pbftNode.NodeID,
-		Role:       getNodeRole(ReputationMap[rphm.pbftNode.ShardID][rphm.pbftNode.NodeID]),
-		IsMainNode: false,
-		SeqID:      rphm.pbftNode.sequenceID,
-	}
-	rolebyte, err := json.Marshal(rolemsg)
-	if err != nil {
-		log.Panic()
-	}
-	role_msg_send := message.MergeMessage(message.CRegisterNodeMessage, rolebyte)
-	//networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send2)
-	networks.TcpDial(role_msg_send, rphm.pbftNode.ip_nodeTable[params.DeciderShard][0])
-	//fmt.Println("-----发送成功-----")*/
 	return true
 }
 
 // the operation in commit.
 func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) bool {
 	r := rphm.pbftNode.requestPool[string(cmsg.Digest)]
-	// requestType ...
 	block := core.DecodeB(r.Msg.Content)
 	rphm.pbftNode.pl.Plog.Printf("S%dN%d : adding the block %d...now height = %d \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number, rphm.pbftNode.CurChain.CurrentBlock.Header.Number)
-	//---添加区块
 	rphm.pbftNode.CurChain.AddBlock(block)
 	rphm.pbftNode.pl.Plog.Printf("S%dN%d : added the block %d... \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
 	rphm.pbftNode.CurChain.PrintBlockChain()
-	// ---主节点将中继交易发送到其他的分片  now try to relay txs to other shards (for main nodes)
+	// now try to relay txs to other shards (for main nodes)
 	if rphm.pbftNode.NodeID == rphm.pbftNode.view {
 		rphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, block.Header.Number)
 		// generate relay pool and collect txs excuted
@@ -114,7 +94,6 @@ func (rphm *RawRelayPbftExtraHandleMod) HandleinCommit(cmsg *message.Commit) boo
 				log.Panic()
 			}
 			msg_send := message.MergeMessage(message.CRelay, rByte)
-			//发送给每个分片的主节点
 			go networks.TcpDial(msg_send, rphm.pbftNode.ip_nodeTable[sid][0])
 			rphm.pbftNode.pl.Plog.Printf("S%dN%d : sended relay txs to %d\n", rphm.pbftNode.ShardID, rphm.pbftNode.NodeID, sid)
 		}
